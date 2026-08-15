@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Cricket Manager",
+    "slug": "cricket-manager",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "cricketmanager",
+    "plugins": ["expo-router"],
+    "android": { "package": "com.cricketmanager.app" },
+    "ios": { "bundleIdentifier": "com.cricketmanager.app" }
+  }
+}
