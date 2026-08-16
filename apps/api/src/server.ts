@@ -5,179 +5,41 @@ import jwt from "jsonwebtoken";
 import { PrismaClient, BookingStatus } from "@prisma/client";
 import { z } from "zod";
 
-const prisma = new PrismaClient();
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-const PORT = Number(process.env.PORT ?? 4000);
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret";
-type TokenUser = { id:string; name:string; phone:string; role?:string|null; teamName?:string|null };
-const token = (u:TokenUser) => jwt.sign(u, JWT_SECRET, { expiresIn:"30d" });
-
-function auth(req:express.Request,res:express.Response,next:express.NextFunction){
-  const h=req.headers.authorization;
-  if(!h?.startsWith("Bearer ")) return res.status(401).json({error:"Unauthorized"});
-  try { (req as any).user=jwt.verify(h.slice(7),JWT_SECRET); next(); }
-  catch { res.status(401).json({error:"Invalid token"}); }
-}
-
-const publicUser=(id:string)=>prisma.user.findUnique({where:{id},select:{id:true,name:true,phone:true,role:true,teamName:true}});
+const prisma=new PrismaClient(); const app=express(); app.use(cors()); app.use(express.json());
+const PORT=Number(process.env.PORT??4000), JWT_SECRET=process.env.JWT_SECRET??"dev-secret";
+type TokenUser={id:string;name:string;phone:string;role?:string|null;teamName?:string|null};
+const token=(u:TokenUser)=>jwt.sign(u,JWT_SECRET,{expiresIn:"30d"});
+function auth(req:express.Request,res:express.Response,next:express.NextFunction){const h=req.headers.authorization;if(!h?.startsWith("Bearer "))return res.status(401).json({error:"Unauthorized"});try{(req as any).user=jwt.verify(h.slice(7),JWT_SECRET);next()}catch{res.status(401).json({error:"Invalid token"})}}
+const publicUser=(id:string)=>prisma.user.findUnique({where:{id},select:{id:true,name:true,phone:true,role:true,teamName:true,captainQrData:true}});
 app.get("/health",(_req,res)=>res.json({ok:true}));
-
 const otpStore=new Map<string,{otp:string;expires:number}>();
-app.post("/auth/send-otp",async(req,res)=>{
-  const phone=z.string().min(8).parse(req.body.phone).trim();
-  otpStore.set(phone,{otp:"123456",expires:Date.now()+300000});
-  res.json({ok:true,devOtp:"123456"});
-});
-
-app.post("/auth/verify-otp",async(req,res)=>{
-  const body=z.object({phone:z.string().min(8),otp:z.string().length(6),name:z.string().min(2).optional()}).parse(req.body);
-  body.phone=body.phone.trim();
-  const s=otpStore.get(body.phone);
-  if(!s||s.expires<Date.now()||s.otp!==body.otp) return res.status(400).json({error:"Invalid or expired OTP."});
-  let user=await prisma.user.findUnique({where:{phone:body.phone}});
-  if(!user) user=await prisma.user.create({data:{phone:body.phone,name:body.name??"New Player"}});
-  otpStore.delete(body.phone);
-  await prisma.teamMember.updateMany({where:{invitedPhone:body.phone,userId:null},data:{userId:user.id}});
-  res.json({token:token(user),user:await publicUser(user.id)});
-});
-
+app.post("/auth/send-otp",async(req,res)=>{const phone=z.string().min(8).parse(req.body.phone).trim();otpStore.set(phone,{otp:"123456",expires:Date.now()+300000});res.json({ok:true,devOtp:"123456"})});
+app.post("/auth/verify-otp",async(req,res)=>{const body=z.object({phone:z.string().min(8),otp:z.string().length(6),name:z.string().min(2).optional()}).parse(req.body);body.phone=body.phone.trim();const s=otpStore.get(body.phone);if(!s||s.expires<Date.now()||s.otp!==body.otp)return res.status(400).json({error:"Invalid or expired OTP."});let user=await prisma.user.findUnique({where:{phone:body.phone}});if(!user)user=await prisma.user.create({data:{phone:body.phone,name:body.name??"New Player"}});otpStore.delete(body.phone);await prisma.teamMember.updateMany({where:{invitedPhone:body.phone,userId:null},data:{userId:user.id}});res.json({token:token(user),user:await publicUser(user.id)})});
 app.get("/me",auth,async(req,res)=>res.json(await publicUser((req as any).user.id)));
-app.put("/me/profile",auth,async(req,res)=>{
-  const b=z.object({name:z.string().min(2).max(80)}).parse(req.body);
-  const u=await prisma.user.update({where:{id:(req as any).user.id},data:{name:b.name.trim()}});
-  res.json({user:await publicUser(u.id),token:token(u)});
-});
-app.post("/me/role",auth,async(req,res)=>{
-  const b=z.object({role:z.enum(["PLAYER","CAPTAIN"])}).parse(req.body);
-  const u=await prisma.user.update({where:{id:(req as any).user.id},data:{role:b.role}});
-  res.json({user:await publicUser(u.id),token:token(u)});
-});
+app.put("/me/profile",auth,async(req,res)=>{const b=z.object({name:z.string().min(2).max(80)}).parse(req.body);const u=await prisma.user.update({where:{id:(req as any).user.id},data:{name:b.name.trim()}});res.json({user:await publicUser(u.id),token:token(u)})});
+app.post("/me/role",auth,async(req,res)=>{const b=z.object({role:z.enum(["PLAYER","CAPTAIN"])}).parse(req.body);const u=await prisma.user.update({where:{id:(req as any).user.id},data:{role:b.role}});res.json({user:await publicUser(u.id),token:token(u)})});
+app.post("/me/switch-role",auth,async(req,res)=>{const id=(req as any).user.id,current=await prisma.user.findUnique({where:{id}});if(!current)return res.status(404).json({error:"User not found."});const team=await prisma.team.findUnique({where:{captainId:id}});if(!team)return res.status(400).json({error:"Create your captain team before switching modes."});const next=current.role==="CAPTAIN"?"PLAYER":current.role==="PLAYER"?"CAPTAIN":null;if(!next)return res.status(400).json({error:"Choose a role first."});const u=await prisma.user.update({where:{id},data:{role:next}});res.json({user:await publicUser(u.id),token:token(u),activeRole:next})});
 
-app.post("/me/switch-role",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const current=await prisma.user.findUnique({where:{id}});
-  if(!current) return res.status(404).json({error:"User not found."});
-  if(current.role==="CAPTAIN"){
-    const team=await prisma.team.findUnique({where:{captainId:id}});
-    if(!team) return res.status(400).json({error:"Create your captain team before switching to player mode."});
-    const u=await prisma.user.update({where:{id},data:{role:"PLAYER"}});
-    return res.json({user:await publicUser(u.id),token:token(u),activeRole:"PLAYER"});
-  }
-  if(current.role==="PLAYER"){
-    const team=await prisma.team.findUnique({where:{captainId:id}});
-    if(!team) return res.status(400).json({error:"You are not registered as a captain yet."});
-    const u=await prisma.user.update({where:{id},data:{role:"CAPTAIN"}});
-    return res.json({user:await publicUser(u.id),token:token(u),activeRole:"CAPTAIN"});
-  }
-  return res.status(400).json({error:"Choose a role first."});
-});
+app.get("/captain/team",auth,async(req,res)=>{res.json(await prisma.team.findUnique({where:{captainId:(req as any).user.id},include:{members:{orderBy:{createdAt:"asc"},include:{user:{select:{id:true,name:true,phone:true,role:true}}}}}}))});
+app.post("/captain/team",auth,async(req,res)=>{const id=(req as any).user.id,b=z.object({name:z.string().min(2).max(80)}).parse(req.body),u=await prisma.user.findUnique({where:{id}});if(!u||u.role!=="CAPTAIN")return res.status(403).json({error:"Captain access required."});if(await prisma.team.findUnique({where:{captainId:id}}))return res.status(409).json({error:"You already have a team."});const t=await prisma.team.create({data:{name:b.name.trim(),captainId:id}});await prisma.user.update({where:{id},data:{teamName:t.name}});res.status(201).json(t)});
+app.post("/captain/team/players",auth,async(req,res)=>{const id=(req as any).user.id,phone=z.string().min(8).max(30).parse(req.body.phone).trim(),team=await prisma.team.findUnique({where:{captainId:id}});if(!team)return res.status(400).json({error:"Create your team first."});if(await prisma.teamMember.findUnique({where:{teamId_invitedPhone:{teamId:team.id,invitedPhone:phone}}))return res.status(409).json({error:"This number is already in your team."});let p=await prisma.user.findUnique({where:{phone}}),createdProfile=false;if(!p){p=await prisma.user.create({data:{phone,name:"New Player",role:"PLAYER"}});createdProfile=true}else if(!p.role)p=await prisma.user.update({where:{id:p.id},data:{role:"PLAYER"}});const m=await prisma.teamMember.create({data:{teamId:team.id,userId:p.id,invitedPhone:phone}});res.status(201).json({createdProfile,devOtp:createdProfile?"123456":null,member:{id:m.id,phone:p.phone,name:p.name,userId:p.id}})});
+app.put("/captain/qr",auth,async(req,res)=>{const b=z.object({qrData:z.string().min(3).max(2000)}).parse(req.body),u=await prisma.user.update({where:{id:(req as any).user.id},data:{captainQrData:b.qrData}});res.json({user:await publicUser(u.id)})});
 
-app.get("/captain/team",auth,async(req,res)=>{
-  const team=await prisma.team.findUnique({
-    where:{captainId:(req as any).user.id},
-    include:{
-      members:{
-        orderBy:{createdAt:"asc"},
-        include:{user:{select:{id:true,name:true,phone:true,role:true}}}
-      }
-    }
-  });
-  res.json(team);
-});
+app.get("/captain/matches",auth,async(req,res)=>{const id=(req as any).user.id;const matches=await prisma.match.findMany({where:{captainId:id},include:{bookings:{include:{player:{select:{id:true,name:true,phone:true}}}}},orderBy:{startsAt:"asc"}});res.json({matches})});
+app.post("/captain/matches",auth,async(req,res)=>{const id=(req as any).user.id,b=z.object({title:z.string().min(2),ground:z.string().min(2).optional(),startsAt:z.coerce.date(),endsAt:z.coerce.date()}).parse(req.body);if(b.endsAt.getTime()-b.startsAt.getTime()<3*60*60*1000)return res.status(400).json({error:"Cricket matches must be at least 3 hours."});const clash=await prisma.match.findFirst({where:{captainId:id,startsAt:{lt:b.endsAt},endsAt:{gt:b.startsAt}}});if(clash)return res.status(409).json({error:"You already have a match at this time."});const m=await prisma.match.create({data:{title:b.title,ground:b.ground??null,startsAt:b.startsAt,endsAt:b.endsAt,captainId:id}});res.status(201).json(m)});
+app.post("/captain/matches/:matchId/players",auth,async(req,res)=>{const captainId=(req as any).user.id,b=z.object({phone:z.string().min(8).max(30).optional(),playerId:z.string().optional(),feeAmount:z.coerce.number().int().min(0).default(0)}).parse(req.body);const match=await prisma.match.findFirst({where:{id:req.params.matchId,captainId}});if(!match)return res.status(404).json({error:"Match not found."});let p=b.playerId?await prisma.user.findUnique({where:{id:b.playerId}}):await prisma.user.findUnique({where:{phone:b.phone!.trim()}});let created=false;if(!p&&b.phone){p=await prisma.user.create({data:{phone:b.phone.trim(),name:"New Player",role:"PLAYER"}});created=true}if(!p)return res.status(404).json({error:"Player not found."});const existing=await prisma.matchBooking.findUnique({where:{matchId_playerId:{matchId:match.id,playerId:p.id}}});if(existing)return res.status(409).json({error:"Player is already added to this match."});const booking=await prisma.matchBooking.create({data:{matchId:match.id,playerId:p.id,status:BookingStatus.ACCEPTED,feeAmount:b.feeAmount}});res.status(201).json({createdProfile:created,devOtp:created?"123456":null,booking})});
+app.get("/captain/fees",auth,async(req,res)=>{const id=(req as any).user.id;const rows=await prisma.matchBooking.findMany({where:{match:{captainId:id},feeAmount:{gt:0},feePaid:false},include:{player:{select:{id:true,name:true,phone:true}},match:{select:{id:true,title:true,startsAt:true}}},orderBy:{match:{startsAt:"asc"}}});res.json({fees:rows,total:rows.reduce((s,x)=>s+x.feeAmount,0)})});
+app.post("/captain/fees/:id/confirm",auth,async(req,res)=>{const id=(req as any).user.id;const b=await prisma.matchBooking.findFirst({where:{id:req.params.id,match:{captainId:id},paymentMarkedByPlayer:true,feePaid:false}});if(!b)return res.status(404).json({error:"Payment confirmation not found."});res.json(await prisma.matchBooking.update({where:{id:b.id},data:{feePaid:true}}))});
 
-app.post("/captain/team",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const b=z.object({name:z.string().min(2).max(80)}).parse(req.body);
-  const u=await prisma.user.findUnique({where:{id}});
-  if(!u||u.role!=="CAPTAIN") return res.status(403).json({error:"Captain access required."});
-  if(await prisma.team.findUnique({where:{captainId:id}})) return res.status(409).json({error:"You already have a team."});
-  const t=await prisma.team.create({data:{name:b.name.trim(),captainId:id}});
-  await prisma.user.update({where:{id},data:{teamName:t.name}});
-  res.status(201).json(t);
-});
+app.get("/player/teams",auth,async(req,res)=>{const id=(req as any).user.id,m=await prisma.teamMember.findMany({where:{userId:id},include:{team:{include:{captain:{select:{id:true,name:true}}}}},orderBy:{createdAt:"desc"}}),b=await prisma.matchBooking.findMany({where:{playerId:id},include:{match:{include:{captain:{select:{id:true,name:true,teamName:true}}}}},orderBy:{match:{startsAt:"desc"}}});const out=new Map<string,any>();for(const x of m)out.set(x.team.id,{id:x.team.id,name:x.team.name,captain:x.team.captain.name,source:"Team",lastMatch:null});for(const x of b){const c=x.match.captain,key=c.id,e=out.get(key);if(e){if(!e.lastMatch||new Date(x.match.startsAt)>new Date(e.lastMatch))e.lastMatch=x.match.startsAt}else out.set(key,{id:key,name:c.teamName||"Team",captain:c.name,source:"Booked",lastMatch:x.match.startsAt})}res.json({teams:[...out.values()]})});
+app.get("/player/pending-fees",auth,async(req,res)=>{const id=(req as any).user.id,fees=await prisma.matchBooking.findMany({where:{playerId:id,status:BookingStatus.ACCEPTED,feePaid:false,feeAmount:{gt:0}},include:{match:{include:{captain:{select:{name:true,teamName:true,captainQrData:true}}}}},orderBy:{match:{startsAt:"desc"}}});res.json({fees,total:fees.reduce((s,x)=>s+x.feeAmount,0)})});
+app.post("/player/fees/:id/mark-paid",auth,async(req,res)=>{const id=(req as any).user.id;const b=await prisma.matchBooking.findFirst({where:{id:req.params.id,playerId:id,status:BookingStatus.ACCEPTED,feePaid:false}});if(!b)return res.status(404).json({error:"Pending fee not found."});res.json(await prisma.matchBooking.update({where:{id:b.id},data:{paymentMarkedByPlayer:true,paymentMarkedAt:new Date()}}))});
+app.post("/player/fees/:id/pay",auth,async(req,res)=>{return res.status(400).json({error:"Use 'Payment Done' and wait for captain confirmation."})});
+app.get("/player/matches",auth,async(req,res)=>{const id=(req as any).user.id;const rows=await prisma.matchBooking.findMany({where:{playerId:id,status:{in:[BookingStatus.ACCEPTED,BookingStatus.PENDING]}},include:{match:{include:{captain:{select:{id:true,name:true,teamName:true,captainQrData:true}}}}},orderBy:{match:{startsAt:"asc"}});res.json({matches:rows})});
 
-app.post("/captain/team/players",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const phone=z.string().min(8).max(30).parse(req.body.phone).trim();
-  const team=await prisma.team.findUnique({where:{captainId:id}});
-  if(!team) return res.status(400).json({error:"Create your team first."});
-  if(await prisma.teamMember.findUnique({where:{teamId_invitedPhone:{teamId:team.id,invitedPhone:phone}}})) return res.status(409).json({error:"This number is already in your team."});
-  let p=await prisma.user.findUnique({where:{phone}});
-  let createdProfile=false;
-  if(!p){p=await prisma.user.create({data:{phone,name:"New Player",role:"PLAYER"}});createdProfile=true;}
-  else if(!p.role) p=await prisma.user.update({where:{id:p.id},data:{role:"PLAYER"}});
-  const m=await prisma.teamMember.create({data:{teamId:team.id,userId:p.id,invitedPhone:phone}});
-  res.status(201).json({createdProfile,member:{id:m.id,phone:p.phone,name:p.name,userId:p.id}});
-});
+app.get("/schedule",auth,async(req,res)=>{const id=(req as any).user.id;const locks=await prisma.scheduleLock.findMany({where:{playerId:id},include:{captain:{select:{name:true,teamName:true}}},orderBy:{startsAt:"asc"}}),requests=await prisma.matchBooking.findMany({where:{playerId:id,status:BookingStatus.PENDING},include:{match:{include:{captain:{select:{name:true,teamName:true}}}}},orderBy:{match:{startsAt:"asc"}}});res.json({locks,requests})});
+app.post("/schedule/lock",auth,async(req,res)=>{const id=(req as any).user.id,b=z.object({title:z.string().min(2),startsAt:z.coerce.date(),endsAt:z.coerce.date()}).parse(req.body);if(b.endsAt<=b.startsAt)return res.status(400).json({error:"End time must be after start time."});const c=await prisma.scheduleLock.findMany({where:{playerId:id,startsAt:{lt:b.endsAt},endsAt:{gt:b.startsAt},status:"LOCKED"}});if(c.length)return res.status(409).json({error:"This time is already locked in your schedule.",conflicts:c});res.status(201).json(await prisma.scheduleLock.create({data:{playerId:id,title:b.title,startsAt:b.startsAt,endsAt:b.endsAt,source:"PLAYER"}}))});
 
-app.get("/player/teams",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const m=await prisma.teamMember.findMany({where:{userId:id},include:{team:{include:{captain:{select:{id:true,name:true}}}}},orderBy:{createdAt:"desc"}});
-  const b=await prisma.matchBooking.findMany({where:{playerId:id},include:{match:{include:{captain:{select:{id:true,name:true,teamName:true}}}}},orderBy:{match:{startsAt:"desc"}}});
-  const out=new Map<string,any>();
-  for(const x of m) out.set(x.team.id,{id:x.team.id,name:x.team.name,captain:x.team.captain.name,source:"Team",lastMatch:null,status:null});
-  for(const x of b){
-    const c=x.match.captain,key=c.id,e=out.get(key);
-    if(e){if(!e.lastMatch||new Date(x.match.startsAt)>new Date(e.lastMatch))e.lastMatch=x.match.startsAt;e.status=x.status;}
-    else out.set(key,{id:key,name:c.teamName||"Team",captain:c.name,source:"Booked",lastMatch:x.match.startsAt,status:x.status});
-  }
-  res.json({teams:[...out.values()]});
-});
-
-app.get("/player/pending-fees",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const fees=await prisma.matchBooking.findMany({where:{playerId:id,status:BookingStatus.ACCEPTED,feePaid:false,feeAmount:{gt:0}},include:{match:{include:{captain:{select:{name:true,teamName:true}}}}},orderBy:{match:{startsAt:"desc"}}});
-  res.json({fees,total:fees.reduce((s,x)=>s+x.feeAmount,0)});
-});
-
-app.post("/player/fees/:id/pay",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const b=await prisma.matchBooking.findFirst({where:{id:req.params.id,playerId:id,status:BookingStatus.ACCEPTED,feePaid:false}});
-  if(!b) return res.status(404).json({error:"Pending fee not found."});
-  res.json(await prisma.matchBooking.update({where:{id:b.id},data:{feePaid:true}}));
-});
-
-app.get("/schedule",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const locks=await prisma.scheduleLock.findMany({where:{playerId:id},include:{captain:{select:{name:true,teamName:true}}},orderBy:{startsAt:"asc"}});
-  const requests=await prisma.matchBooking.findMany({where:{playerId:id,status:BookingStatus.PENDING},include:{match:{include:{captain:{select:{name:true,teamName:true}}}}},orderBy:{match:{startsAt:"asc"}}});
-  res.json({locks,requests});
-});
-
-app.post("/schedule/lock",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const b=z.object({title:z.string().min(2),startsAt:z.coerce.date(),endsAt:z.coerce.date()}).parse(req.body);
-  if(b.endsAt<=b.startsAt) return res.status(400).json({error:"End time must be after start time."});
-  const c=await prisma.scheduleLock.findMany({where:{playerId:id,startsAt:{lt:b.endsAt},endsAt:{gt:b.startsAt},status:"LOCKED"}});
-  if(c.length) return res.status(409).json({error:"This time is already locked in your schedule.",conflicts:c});
-  const l=await prisma.scheduleLock.create({data:{playerId:id,title:b.title,startsAt:b.startsAt,endsAt:b.endsAt,source:"PLAYER"}});
-  res.status(201).json(l);
-});
-
-app.post("/captain/book-player",auth,async(req,res)=>{
-  const captainId=(req as any).user.id;
-  const b=z.object({playerId:z.string(),title:z.string().min(2),startsAt:z.coerce.date(),endsAt:z.coerce.date(),feeAmount:z.coerce.number().int().min(0).default(0)}).parse(req.body);
-  const p=await prisma.user.findUnique({where:{id:b.playerId}});
-  if(!p) return res.status(404).json({error:"Player not found."});
-  const lock=await prisma.scheduleLock.findMany({where:{playerId:b.playerId,status:"LOCKED",startsAt:{lt:b.endsAt},endsAt:{gt:b.startsAt}}});
-  const confirmed=await prisma.matchBooking.findMany({where:{playerId:b.playerId,status:BookingStatus.ACCEPTED,match:{startsAt:{lt:b.endsAt},endsAt:{gt:b.startsAt}}}});
-  if(lock.length||confirmed.length) return res.status(409).json({error:"Player is not available for this time."});
-  const match=await prisma.match.create({data:{title:b.title,startsAt:b.startsAt,endsAt:b.endsAt,captainId,bookings:{create:{playerId:b.playerId,status:BookingStatus.PENDING,feeAmount:b.feeAmount}}},include:{bookings:true}});
-  res.status(201).json(match);
-});
-
-app.post("/bookings/:id/respond",auth,async(req,res)=>{
-  const id=(req as any).user.id;
-  const b=z.object({accept:z.boolean()}).parse(req.body);
-  const booking=await prisma.matchBooking.findUnique({where:{id:req.params.id},include:{match:true}});
-  if(!booking||booking.playerId!==id) return res.status(404).json({error:"Request not found."});
-  if(!b.accept) return res.json(await prisma.matchBooking.update({where:{id:booking.id},data:{status:BookingStatus.DECLINED}}));
-  const conflict=await prisma.matchBooking.findMany({where:{playerId:id,status:BookingStatus.ACCEPTED,match:{startsAt:{lt:booking.match.endsAt},endsAt:{gt:booking.match.startsAt}}}});
-  if(conflict.length) return res.status(409).json({error:"You already have a confirmed match at this time."});
-  res.json(await prisma.matchBooking.update({where:{id:booking.id},data:{status:BookingStatus.ACCEPTED}}));
-});
-
+app.post("/captain/book-player",auth,async(req,res)=>{const captainId=(req as any).user.id,b=z.object({playerId:z.string(),title:z.string().min(2),startsAt:z.coerce.date(),endsAt:z.coerce.date(),feeAmount:z.coerce.number().int().min(0).default(0)}).parse(req.body),p=await prisma.user.findUnique({where:{id:b.playerId}});if(!p)return res.status(404).json({error:"Player not found."});const lock=await prisma.scheduleLock.findMany({where:{playerId:b.playerId,status:"LOCKED",startsAt:{lt:b.endsAt},endsAt:{gt:b.startsAt}}}),confirmed=await prisma.matchBooking.findMany({where:{playerId:b.playerId,status:BookingStatus.ACCEPTED,match:{startsAt:{lt:b.endsAt},endsAt:{gt:b.startsAt}}}});if(lock.length||confirmed.length)return res.status(409).json({error:"Player is not available for this time."});res.status(201).json(await prisma.match.create({data:{title:b.title,startsAt:b.startsAt,endsAt:b.endsAt,captainId,bookings:{create:{playerId:b.playerId,status:BookingStatus.PENDING,feeAmount:b.feeAmount}}},include:{bookings:true}}))});
+app.post("/bookings/:id/respond",auth,async(req,res)=>{const id=(req as any).user.id,b=z.object({accept:z.boolean()}).parse(req.body),booking=await prisma.matchBooking.findUnique({where:{id:req.params.id},include:{match:true}});if(!booking||booking.playerId!==id)return res.status(404).json({error:"Request not found."});if(!b.accept)return res.json(await prisma.matchBooking.update({where:{id:booking.id},data:{status:BookingStatus.DECLINED}}));const conflict=await prisma.matchBooking.findMany({where:{playerId:id,status:BookingStatus.ACCEPTED,match:{startsAt:{lt:booking.match.endsAt},endsAt:{gt:booking.match.startsAt}}}});if(conflict.length)return res.status(409).json({error:"You already have a confirmed match at this time."});res.json(await prisma.matchBooking.update({where:{id:booking.id},data:{status:BookingStatus.ACCEPTED}}))});
 app.listen(PORT,()=>console.log(`🏏 Cricket Manager API: http://localhost:${PORT}`));
