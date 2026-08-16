@@ -7,22 +7,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole { PLAYER CAPTAIN GROUND_OWNER ADMIN }
-enum BookingStatus { PENDING ACCEPTED DECLINED CANCELLED }
+enum UserRole {
+  PLAYER
+  CAPTAIN
+  GROUND_OWNER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
 
 model User {
-  id            String          @id @default(cuid())
-  name          String
-  phone         String          @unique
-  teamName      String?
-  captainQrData String?
-  role          UserRole?
-  createdAt     DateTime        @default(now())
-  bookings      MatchBooking[]
-  locks         ScheduleLock[]  @relation("PlayerLocks")
-  captainLocks  ScheduleLock[]  @relation("CaptainLocks")
-  captainMatches Match[]        @relation("CaptainMatches")
-  captainTeams  Team[]          @relation("TeamCaptain")
+  id             String          @id @default(cuid())
+  name           String
+  phone          String          @unique
+  teamName       String?
+  captainQrData  String?
+  role           UserRole?
+  createdAt      DateTime        @default(now())
+  bookings       MatchBooking[]
+  locks          ScheduleLock[]  @relation("PlayerLocks")
+  captainLocks   ScheduleLock[]  @relation("CaptainLocks")
+  captainMatches Match[]         @relation("CaptainMatches")
+  captainTeams   Team[]          @relation("TeamCaptain")
   teamMemberships TeamMember[]
 }
 
