@@ -54,24 +54,26 @@ model Match {
   startsAt    DateTime
   endsAt      DateTime
   captainId   String
+  totalFee    Float?
+  feeSettled  Boolean         @default(false)
   captain     User            @relation("CaptainMatches", fields: [captainId], references: [id])
   bookings    MatchBooking[]
   createdAt   DateTime        @default(now())
 }
 
 model MatchBooking {
-  id                 String        @id @default(cuid())
-  matchId            String
-  playerId           String
-  status             BookingStatus @default(PENDING)
-  feeAmount          Int           @default(0)
-  feePaid            Boolean       @default(false)
-  paymentMarkedByPlayer Boolean    @default(false)
-  paymentMarkedAt    DateTime?
-  match              Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  player             User           @relation(fields: [playerId], references: [id])
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  id                    String        @id @default(cuid())
+  matchId               String
+  playerId              String
+  status                BookingStatus @default(PENDING)
+  feeAmount             Float         @default(0)
+  feePaid               Boolean       @default(false)
+  paymentMarkedByPlayer Boolean       @default(false)
+  paymentMarkedAt       DateTime?
+  match                 Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player                User          @relation(fields: [playerId], references: [id])
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
   @@unique([matchId, playerId])
   @@index([playerId, status])
   @@index([playerId, feePaid])
