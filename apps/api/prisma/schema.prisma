@@ -7,32 +7,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  PLAYER
-  CAPTAIN
-  GROUND_OWNER
-  ADMIN
-}
-
-enum BookingStatus {
-  PENDING
-  ACCEPTED
-  DECLINED
-  CANCELLED
-}
+enum UserRole { PLAYER CAPTAIN GROUND_OWNER ADMIN }
+enum BookingStatus { PENDING ACCEPTED DECLINED CANCELLED }
 
 model User {
-  id          String          @id @default(cuid())
-  name        String
-  phone       String          @unique
-  teamName    String?
-  role        UserRole?
-  createdAt   DateTime        @default(now())
-  bookings    MatchBooking[]
-  locks       ScheduleLock[]  @relation("PlayerLocks")
-  captainLocks ScheduleLock[] @relation("CaptainLocks")
-  captainMatches Match[]      @relation("CaptainMatches")
-  captainTeams Team[]         @relation("TeamCaptain")
+  id            String          @id @default(cuid())
+  name          String
+  phone         String          @unique
+  teamName      String?
+  captainQrData String?
+  role          UserRole?
+  createdAt     DateTime        @default(now())
+  bookings      MatchBooking[]
+  locks         ScheduleLock[]  @relation("PlayerLocks")
+  captainLocks  ScheduleLock[]  @relation("CaptainLocks")
+  captainMatches Match[]        @relation("CaptainMatches")
+  captainTeams  Team[]          @relation("TeamCaptain")
   teamMemberships TeamMember[]
 }
 
@@ -60,6 +50,7 @@ model TeamMember {
 model Match {
   id          String          @id @default(cuid())
   title       String
+  ground      String?
   startsAt    DateTime
   endsAt      DateTime
   captainId   String
@@ -69,16 +60,18 @@ model Match {
 }
 
 model MatchBooking {
-  id          String        @id @default(cuid())
-  matchId     String
-  playerId    String
-  status      BookingStatus @default(PENDING)
-  feeAmount   Int           @default(0)
-  feePaid     Boolean       @default(false)
-  match       Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  player      User          @relation(fields: [playerId], references: [id])
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  matchId            String
+  playerId           String
+  status             BookingStatus @default(PENDING)
+  feeAmount          Int           @default(0)
+  feePaid            Boolean       @default(false)
+  paymentMarkedByPlayer Boolean    @default(false)
+  paymentMarkedAt    DateTime?
+  match              Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player             User           @relation(fields: [playerId], references: [id])
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
   @@unique([matchId, playerId])
   @@index([playerId, status])
   @@index([playerId, feePaid])
