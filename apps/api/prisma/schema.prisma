@@ -28,6 +28,8 @@ model User {
   teamName       String?
   captainQrData  String?
   role           UserRole?
+  isPlayer       Boolean         @default(false)
+  isCaptain      Boolean         @default(false)
   createdAt      DateTime        @default(now())
   bookings       MatchBooking[]
   locks          ScheduleLock[]  @relation("PlayerLocks")
@@ -101,6 +103,6 @@ model ScheduleLock {
   status      String   @default("LOCKED")
   player      User     @relation("PlayerLocks", fields: [playerId], references: [id], onDelete: Cascade)
   captain     User?    @relation("CaptainLocks", fields: [captainId], references: [id])
-  createdAt   DateTime @default(now())
+  createdAt   DateTime        @default(now())
   @@index([playerId, startsAt, endsAt])
 }
