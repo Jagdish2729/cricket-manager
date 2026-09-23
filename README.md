@@ -1,74 +1,81 @@
-# Cricket Manager MVP v3
+# Cricket Manager — MVP Foundation
 
-This version follows the product flow agreed for the first release.
+A mobile-first cricket player & captain management app for Android and iOS.
 
-## User journey
+## Product goal
 
-### First-time user
-Sign in / sign up with mobile number -> OTP -> choose:
-- I am a Player
-- I am a Captain
+Keep a player's cricket commitments in one place so they do not accidentally accept overlapping matches.
 
-### Returning user
-If logged in, open directly into the app. Logout returns to sign-in.
+### MVP
 
-### Player
-- My Schedule
-- Lock their own time slots
-- See captain match requests
-- Confirm / decline captain requests
-- A captain cannot request a player during a locked or confirmed time slot
+- Email/password authentication
+- Player / Captain onboarding
+- Player calendar and upcoming matches
+- Captain team creation
+- Player invitations with accept/reject
+- Match conflict detection
+- Match reminders
+- Match location with Google Maps
+- Basic player profile
+- Team and 1-to-1/team chat foundation
 
-### Captain
-- Enter team name
-- See:
-  - Book Player
-  - Manage Ground Fees
+### Later phases
 
-Those captain features are intentionally placeholders for the next phase.
+- Tournament management and points tables
+- Match/player statistics
+- Cricket profile/reels
+- Match fees and online payments
+- Pro subscription and ads
+- WhatsApp notifications
+- AI cricket assistant and video analysis
 
-## Development OTP
+## Repository
 
-OTP is currently `123456` for development only. Replace with Firebase Phone Auth, MSG91, Twilio, or another provider before production.
+- `apps/mobile` — Expo + React Native + TypeScript
+- `apps/api` — Node.js + TypeScript API
+- `apps/api/prisma` — database schema
 
-## Run API
+## Local setup
 
-```bash
-cd apps/api
-npm install
-npx prisma generate
-npx prisma migrate dev --name v3
-npm run seed
-npm run dev
-```
+### Requirements
 
-## Run mobile
+- Node.js 20+
+- Git
+- Android Studio/emulator or Expo Go
+- PostgreSQL for the API
+
+### Mobile
 
 ```bash
 cd apps/mobile
 npm install
+copy .env.example .env
 npx expo start
 ```
 
-For web, press `w`.
+### API
 
-Set `apps/mobile/.env`:
-
-```env
-EXPO_PUBLIC_API_URL=http://192.168.1.14:4000
+```bash
+cd apps/api
+npm install
+copy .env.example .env
+npx prisma generate
+npm run dev
 ```
 
-Use the current LAN IP of the computer when testing on a phone.
+Do not commit real credentials or `.env` files.
 
-## Calendar UX
-The player schedule is intentionally calendar-first, similar to an Outlook-style meeting calendar. Players can select a date, see blocked slots, and block their own time. Captain requests appear separately for confirmation.
+## Development order
 
-## v5 calendar UI
-The player home is now an Outlook-style calendar: Work week, Week, Day and Month views, hourly time grid, navigation, Today button, event blocks, captain confirmation cards, and click-to-block time slots.
+1. Auth + onboarding
+2. Player profile
+3. Calendar/matches
+4. Captain team + invitations
+5. Conflict detection
+6. Notifications
+7. Location
+8. Chat
+9. Payments/subscription
+10. Cricket profile/reels
 
-## v6 profile + phone-based team onboarding
-- First OTP login creates a placeholder profile until the player/captain enters a full name.
-- Mobile number is the primary identity.
-- Captains create their team first.
-- Captains add players by mobile number.
-- Existing numbers are linked to their profile; new numbers get a player profile immediately and can complete their profile later.
+The first implementation is intentionally kept small so each milestone can be tested before the next one is added.
